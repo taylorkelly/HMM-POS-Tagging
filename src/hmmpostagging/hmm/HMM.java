@@ -7,16 +7,29 @@ import hmmpostagging.hmm.structures.ObservationSequence;
 import hmmpostagging.hmm.structures.ObservationSequenceStructure;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.Writer;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 /**
+ * An HMM!
+ * An abstract HMM, allowing the actual implementation to be changed up slightly.
+ * The main pieces (ObservationLikelihoods and TagTransitions) are non-specified
+ * and could be implemented OO-ly or using tables.
  *
- * @author taylor
+ * Any class that extends HMM should initialize these variables in the
+ * constructor.
+ *
+ * Has methods to train (sup or un-sup), analyze, predict, and all sorts of
+ * crazy stuff.
+ *
+ * I would've liked it to be more abstracted away from Words and Sentences
+ * (which it was original super-tied to), but I only got half way.
+ *
+ * @author Taylor
  */
 public abstract class HMM {
     protected ObsersationLikelihoods likelihoods;
@@ -66,8 +79,16 @@ public abstract class HMM {
      * @param observation
      */
     private void addToStateList(Observation observation) {
-        if (!states.contains(observation.getState())) {
-            states.add(observation.getState());
+        addToStateList(observation.getState());
+    }
+
+    /**
+     * Adds a given state to the HMM's own list of states.
+     * @param observation
+     */
+    private void addToStateList(String state) {
+        if (!states.contains(state)) {
+            states.add(state);
         }
     }
 
@@ -153,7 +174,7 @@ public abstract class HMM {
         // The intialization, from the start state to first word
         for (int i = 0; i < states.size(); i++) {
             String state = stateArray[i];
-            forwardMatrix[i][0] = transitions.probability(null, state) * likelihoods.probability(state, sentence.get(0).getWord());
+            forwardMatrix[i][0] = transitions.probability(null, state) * likelihoods.probability(state, sentence.get(0).getValue());
         }
 
         // The rest of the words in the sentence
@@ -163,7 +184,7 @@ public abstract class HMM {
                 for (int i = 0; i < states.size(); i++) {
                     probability += forwardMatrix[i][t - 1] * transitions.probability(stateArray[i], stateArray[j]);
                 }
-                forwardMatrix[j][t] = probability * likelihoods.probability(stateArray[j], sentence.get(t).getWord());
+                forwardMatrix[j][t] = probability * likelihoods.probability(stateArray[j], sentence.get(t).getValue());
             }
         }
 
@@ -228,7 +249,7 @@ public abstract class HMM {
             for (int i = 0; i < states.size(); i++) {
                 double probability = 0;
                 for (int j = 0; j < states.size(); j++) {
-                    probability += backwardMatrix[j][t + 1] * transitions.probability(stateArray[i], stateArray[j]) * likelihoods.probability(stateArray[j], sentence.get(t + 1).getWord());
+                    probability += backwardMatrix[j][t + 1] * transitions.probability(stateArray[i], stateArray[j]) * likelihoods.probability(stateArray[j], sentence.get(t + 1).getValue());
                 }
                 backwardMatrix[i][t] = probability;
             }
@@ -237,7 +258,7 @@ public abstract class HMM {
         // Overall probability and first word
         double probability = 0;
         for (int i = 0; i < states.size(); i++) {
-            probability += backwardMatrix[i][0] * transitions.probability(null, stateArray[i]) * likelihoods.probability(stateArray[i], sentence.get(0).getWord());
+            probability += backwardMatrix[i][0] * transitions.probability(null, stateArray[i]) * likelihoods.probability(stateArray[i], sentence.get(0).getValue());
         }
         return probability;
     }
@@ -291,7 +312,7 @@ public abstract class HMM {
             }
 
             if (i != sentence.length()) {
-                probability *= likelihoods.probability(sentence.get(i).getState(), sentence.get(i).getWord());
+                probability *= likelihoods.probability(sentence.get(i).getState(), sentence.get(i).getValue());
             }
         }
         return probability;
@@ -315,7 +336,7 @@ public abstract class HMM {
         // max rather than sum
         for (int i = 0; i < states.size(); i++) {
             String state = stateArray[i];
-            forwardMatrix[i][0] = transitions.probability(null, state) * likelihoods.probability(state, sentence.get(0).getWord());
+            forwardMatrix[i][0] = transitions.probability(null, state) * likelihoods.probability(state, sentence.get(0).getValue());
             backpointer[i][0] = 0;
         }
 
@@ -324,13 +345,13 @@ public abstract class HMM {
                 double maxLikelihood = -1;
                 int bestState = -1;
                 for (int i = 0; i < states.size(); i++) {
-                    double likelihood = forwardMatrix[i][t - 1] * transitions.probability(stateArray[i], stateArray[j]) * likelihoods.probability(stateArray[j], sentence.get(t).getWord());
+                    double likelihood = forwardMatrix[i][t - 1] * transitions.probability(stateArray[i], stateArray[j]) * likelihoods.probability(stateArray[j], sentence.get(t).getValue());
                     if (likelihood > maxLikelihood) {
                         maxLikelihood = likelihood;
                         bestState = i;
                     }
                 }
-                forwardMatrix[j][t] = maxLikelihood * likelihoods.probability(stateArray[j], sentence.get(t).getWord());
+                forwardMatrix[j][t] = maxLikelihood * likelihoods.probability(stateArray[j], sentence.get(t).getValue());
                 backpointer[j][t] = bestState;
             }
         }
@@ -358,7 +379,7 @@ public abstract class HMM {
         // Shove the new tags into a new sentence with the old words
         Sentence ret = new Sentence();
         for (int i = 0; i < tags.length; i++) {
-            Word word = new Word(sentence.get(i).getWord(), tags[i]);
+            Word word = new Word(sentence.get(i).getValue(), tags[i]);
             ret.addWord(word);
         }
 
@@ -394,13 +415,103 @@ public abstract class HMM {
         return predictTags(set.getSequences());
     }
 
+    /**
+     * Returns the number of states currently embodied in this HMM.
+     * @return The number of states.
+     */
     private int numStates() {
         return states.size();
     }
 
+    /**
+     * Writes this HMM to the parameterized Writer.
+     * Mainly passes it to the ObsersationLikelihoods and TagTransitions for
+     * them to do their stuff.
+     * @param writer The writer to write on
+     * @throws IOException
+     */
     public void save(BufferedWriter writer) throws IOException {
         transitions.save(writer);
+        writer.newLine();
         writer.flush();
         likelihoods.save(writer);
+    }
+
+    /**
+     * Trains based on the passed in set of sequences, but ignores their built
+     * in tags or states. Instead, the HMM attempts to build its own states
+     * to suit the sets. You can also specify a maximum number of states
+     * to prevent it from building a ton of states.
+     * @param set The set of sentences to train from
+     * @param maxStates The maximum number of states the HMM should have.
+     */
+    public void unsupervisedTrain(ObservationSequenceStructure set, int maxStates) {
+        List<ObservationSequence> sequences = set.getSequences();
+        for (ObservationSequence sequence : sequences) {
+            int size = sequence.length();
+            String prevState = null;
+            for (int i = 0; i < size; i++) {
+                Observation currO = sequence.get(i);
+                String state = null;
+                
+                // First check if there is already a state that the word
+                // can have
+                if (likelihoods.hasState(currO.getValue())) {
+                    state = likelihoods.getState(currO.getValue());
+                } else {
+                    state = this.createState(maxStates);
+                }
+
+                if (i > 0) {
+                    transitions.unsupervisedAdd(prevState, state);
+                } else {
+                    transitions.unsupervisedStartState(state);
+                }
+
+                if (i == size - 1) {
+                    transitions.unsupervisedEndState(state);
+                }
+
+                addToStateList(state);
+                likelihoods.unsupervisedAdd(currO, state);
+                prevState = state;
+            }
+        }
+    }
+
+    /**
+     * "Creates" a state. It will return an old state or create a new state
+     * depending on what it thinks it should do.
+     * @param maxStates The maximum number of states the HMM should have
+     * @return The state that the word should get
+     */
+    private String createState(int maxStates) {
+        int currSize = states.size();
+
+        if(currSize == maxStates) {
+            return getOldState();
+        } else {
+            return createNewState();
+        }
+    }
+
+    /**
+     * Returns an already existing state.
+     * Current implementation... returns.. a random state.
+     * @return An old state that the word should get.
+     */
+    private String getOldState() {
+        Random rand = new Random();
+        String[] stateArray = states.toArray(new String[]{});
+        int index = rand.nextInt(stateArray.length);
+        return stateArray[index];
+    }
+
+    /**
+     * Creates brand new state!
+     * @return A brand new state.
+     */
+    private String createNewState() {
+        return "s" + states.size();
     }
 }

@@ -4,30 +4,61 @@ import hmmpostagging.Word;
 import hmmpostagging.hmm.TagTransitions;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.Writer;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
 
 /**
+ * An implementation of the TagTransitions using HashMaps.
+ * This makes it a little easier than managing a matrix or array of arrays.
  *
- * @author taylor
+ * @see hmmpostagging.hmm.TagTransitions
  */
 public class OOTagTransitions implements TagTransitions<Word> {
     private HashMap<String, HashMap<String, Integer>> transitionMapping;
     private HashMap<String, Integer> stateTotals;
     private HashMap<String, LinkedList<Entry<String, Integer>>> sortedTransitions;
+    public static final String TRANSITIONS_HEADER = "**Transitions**";
 
     public OOTagTransitions() {
         transitionMapping = new HashMap<String, HashMap<String, Integer>>();
         stateTotals = new HashMap<String, Integer>();
 
         sortedTransitions = null;
+    }
+
+    public OOTagTransitions(String imported) {
+        this();
+
+        String[] states = imported.split("}");
+        for (String stateString : states) {
+            String[] pieces = stateString.split("\\{");
+            String stateName = pieces[0];
+            if (stateName.equals("^null^")) {
+                stateName = null;
+            }
+            String[] likelihoods = pieces[1].split("\\|");
+            int sum = 0;
+            HashMap<String, Integer> likelihoodMap = new HashMap<String, Integer>();
+            for (String likelihood : likelihoods) {
+                String[] pieces2 = likelihood.split("<");
+                String word = pieces2[0];
+                if (word.equals("^null^")) {
+                    word = null;
+                }
+                int value = Integer.parseInt(pieces2[1]);
+                sum += value;
+                likelihoodMap.put(word, value);
+
+            }
+            transitionMapping.put(stateName, likelihoodMap);
+            stateTotals.put(stateName, sum);
+        }
+        sort();
     }
 
     public void add(Word fromWord, Word toWord) {
@@ -89,7 +120,7 @@ public class OOTagTransitions implements TagTransitions<Word> {
         return null;
     }
 
-    public void sort() {
+    public final void sort() {
         sortedTransitions = new HashMap<String, LinkedList<Entry<String, Integer>>>();
         for (Entry<String, HashMap<String, Integer>> entry :
                 transitionMapping.entrySet()) {
@@ -117,8 +148,6 @@ public class OOTagTransitions implements TagTransitions<Word> {
     }
 
     public void save(BufferedWriter writer) throws IOException {
-        writer.write("**Transitions**");
-        writer.newLine();
         for (Entry<String, HashMap<String, Integer>> mainState :
                 transitionMapping.entrySet()) {
             if (mainState.getKey() == null) {
@@ -126,10 +155,7 @@ public class OOTagTransitions implements TagTransitions<Word> {
             } else {
                 writer.write(mainState.getKey());
             }
-            writer.write(":");
-            writer.write(stateTotals.get(mainState.getKey()).toString());
-            writer.newLine();
-            writer.write("-");
+            writer.write("{");
             for (Entry<String, Integer> innerState :
                     mainState.getValue().entrySet()) {
                 if (innerState.getKey() == null) {
@@ -137,11 +163,24 @@ public class OOTagTransitions implements TagTransitions<Word> {
                 } else {
                     writer.write(innerState.getKey());
                 }
-                writer.write(":");
+                writer.write("<");
                 writer.write(innerState.getValue().toString());
-                writer.write(";");
+                writer.write("|");
             }
-            writer.newLine();
+            writer.write("}");
         }
     }
+
+    public void unsupervisedAdd(String fromState, String toState) {
+        add(fromState, toState);
+    }
+
+    public void unsupervisedStartState(String state) {
+        add(null, state);
+    }
+
+    public void unsupervisedEndState(String state) {
+        add(state, null);
+    }
+
 }

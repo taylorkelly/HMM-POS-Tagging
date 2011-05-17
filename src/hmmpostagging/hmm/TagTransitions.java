@@ -5,8 +5,10 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 
 /**
+ * An interface for the HMM, representing the structure holding the transitions
+ * and likelihoods that one state will go to another state
  *
- * @author taylor
+ * @author Taylor
  */
 public interface TagTransitions<E extends Observation> {
 
@@ -23,4 +25,10 @@ public interface TagTransitions<E extends Observation> {
     public double probability(String fromTag, String toTag);
 
     public void save(BufferedWriter writer) throws IOException;
+
+    public void unsupervisedStartState(String currO);
+
+    public void unsupervisedAdd(String prevO, String currO);
+
+    public void unsupervisedEndState(String currO);
 }

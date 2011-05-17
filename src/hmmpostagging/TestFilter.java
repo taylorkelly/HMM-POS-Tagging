@@ -5,7 +5,7 @@ import java.io.FilenameFilter;
 
 /**
  * FilenameFilter to only get POS files that are for testing
- * @author taylor
+ * @author Taylor
  */
 public class TestFilter implements FilenameFilter {
 

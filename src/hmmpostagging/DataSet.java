@@ -8,8 +8,12 @@ import java.util.List;
 import java.util.Scanner;
 
 /**
- *
- * @author taylor
+ * This can read and will be the internal representation of the .pos files
+ * It can parse through, forming Sentence objects based on the words and their
+ * part-of-speech tags.
+ * It then acts as a information holder for the list of sentences.
+ * 
+ * @author Taylor
  */
 public abstract class DataSet implements ObservationSequenceStructure<Sentence> {
     public static final String COMMENT_INDIC = "*x*";
@@ -17,6 +21,10 @@ public abstract class DataSet implements ObservationSequenceStructure<Sentence> 
     public static final String NOUN_PHRASE_INDIC = "[";
     protected List<Sentence> sentences;
 
+    /**
+     * Creates a new DataSet based around the .pos file.
+     * @param trainFile The .pos file to analyze Sentences from.
+     */
     public DataSet(File trainFile) {
         sentences = new ArrayList<Sentence>();
         Scanner sc;
@@ -54,10 +62,18 @@ public abstract class DataSet implements ObservationSequenceStructure<Sentence> 
         }
     }
 
+    /**
+     * Removes the NP notations ([]) from the line
+     * @param line The original line
+     * @return The line with NP notations removed
+     */
     private static String removeNPAnnotations(String line) {
         return line.substring(1, line.length() - 1).trim();
     }
 
+    /**
+     * @see hmmpostagging.hmm.structures.ObservationSequenceStructure
+     */
     public List<Sentence> getSequences() {
         return sentences;
     }

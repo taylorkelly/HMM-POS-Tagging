@@ -8,29 +8,67 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
+import java.util.Set;
 
 /**
+ * An implementation of the ObservationLikelihoods using HashMaps.
+ * This makes it a little easier than managing a matrix or array of arrays.
  *
- * @author taylor
+ * @see hmmpostagging.hmm.ObsersationLikelihoods
  */
 public class OOObservationLikelihoods implements ObsersationLikelihoods<Word> {
     private HashMap<String, HashMap<String, Integer>> likelihoodMapping;
     private HashMap<String, Integer> stateTotals;
+    private HashSet<String> seenWords;
     private HashMap<String, LinkedList<Entry<String, Integer>>> sortedLikelihoods;
+    public static double ONES_COUNT_CONSTANT = 1.072;
 
     public OOObservationLikelihoods() {
         likelihoodMapping = new HashMap<String, HashMap<String, Integer>>();
         stateTotals = new HashMap<String, Integer>();
+        seenWords = new HashSet<String>();
 
         sortedLikelihoods = null;
     }
 
+    public OOObservationLikelihoods(String imported) {
+        this();
+
+        String[] states = imported.split("}");
+        for (String stateString : states) {
+            String[] pieces = stateString.split("\\{");
+            String stateName = pieces[0];
+            if (stateName.equals("^null^")) {
+                stateName = null;
+            }
+            String[] likelihoods = pieces[1].split("\\|");
+            int sum = 0;
+            HashMap<String, Integer> likelihoodMap = new HashMap<String, Integer>();
+            for (String likelihood : likelihoods) {
+                String[] pieces2 = likelihood.split("<");
+                String word = pieces2[0];
+                if (word.equals("^null^")) {
+                    word = null;
+                }
+                seenWords.add(word);
+                int value = Integer.parseInt(pieces2[1]);
+                sum += value;
+                likelihoodMap.put(word, value);
+
+            }
+            likelihoodMapping.put(stateName, likelihoodMap);
+            stateTotals.put(stateName, sum);
+        }
+        sort();
+    }
+
     public void add(Word currWord) {
-        add(currWord.getState(), currWord.getWord());
+        add(currWord.getState(), currWord.getValue());
     }
 
     private void add(String tag, String word) {
@@ -48,6 +86,7 @@ public class OOObservationLikelihoods implements ObsersationLikelihoods<Word> {
             likelihoodMapping.put(tag, map);
             stateTotals.put(tag, 1);
         }
+        seenWords.add(word);
         sortedLikelihoods = null;
     }
 
@@ -80,7 +119,7 @@ public class OOObservationLikelihoods implements ObsersationLikelihoods<Word> {
         return null;
     }
 
-    public void sort() {
+    public final void sort() {
         sortedLikelihoods = new HashMap<String, LinkedList<Entry<String, Integer>>>();
         for (Entry<String, HashMap<String, Integer>> entry :
                 likelihoodMapping.entrySet()) {
@@ -103,16 +142,43 @@ public class OOObservationLikelihoods implements ObsersationLikelihoods<Word> {
         }
         HashMap<String, Integer> map = likelihoodMapping.get(tag);
         if (!map.containsKey(word)) {
-            //return 0;
-            return unknownWord(map, word) / (double) (stateTotals.get(tag) + 1);
+            return unknownWord(word, tag);
         }
 
         return (double) map.get(word) / stateTotals.get(tag);
     }
 
-    public double unknownWord(HashMap<String, Integer> tagMap, String word) {
-        // TODO Something cooler
-        return 0.5;
+    public double unknownWord(String word, String tag) {
+        if (seenWords.contains(word)) {
+            // If the word has been seen before, but not in this state,
+            // then it's a zero.
+            return 0;
+        } else {
+            // Otherwise do a calculation to see what value to give it
+            HashMap<String, Integer> tagMap = likelihoodMapping.get(tag);
+            // Give unknown words a higher probability for the states that
+            // have more one word counts than non-one word counts
+            int onesCount = getOnesCount(tagMap.values());
+            return Math.pow(ONES_COUNT_CONSTANT, onesCount) / (stateTotals.get(tag) * getStates(false).size());
+        }
+    }
+
+    /**
+     * Return the number of likelihoods with a count of one, minus those without.
+     * This is an attempt to find the best place for unknown words
+     * @param values The values of counts for the likelihoods of a state
+     * @return The ideal 'ones count' number
+     */
+    private int getOnesCount(Collection<Integer> values) {
+        int sum = 0;
+        for (Integer number : values) {
+            if (number.intValue() == 1) {
+                sum++;
+            } else {
+                sum--;
+            }
+        }
+        return sum;
     }
 
     private double average(Collection<Integer> values) {
@@ -124,8 +190,6 @@ public class OOObservationLikelihoods implements ObsersationLikelihoods<Word> {
     }
 
     public void save(BufferedWriter writer) throws IOException {
-        writer.write("**Likelihoods**");
-        writer.newLine();
         for (Entry<String, HashMap<String, Integer>> mainState :
                 likelihoodMapping.entrySet()) {
             if (mainState.getKey() == null) {
@@ -133,10 +197,7 @@ public class OOObservationLikelihoods implements ObsersationLikelihoods<Word> {
             } else {
                 writer.write(mainState.getKey());
             }
-            writer.write(":");
-            writer.write(stateTotals.get(mainState.getKey()).toString());
-            writer.newLine();
-            writer.write("-");
+            writer.write("{");
             for (Entry<String, Integer> innerState :
                     mainState.getValue().entrySet()) {
                 if (innerState.getKey() == null) {
@@ -144,11 +205,38 @@ public class OOObservationLikelihoods implements ObsersationLikelihoods<Word> {
                 } else {
                     writer.write(innerState.getKey());
                 }
-                writer.write(":");
+                writer.write("<");
                 writer.write(innerState.getValue().toString());
-                writer.write(";");
+                writer.write("|");
             }
-            writer.newLine();
+            writer.write("}");
         }
+    }
+
+    public Set<String> getStates(boolean includeNull) {
+        Set<String> states = new HashSet<String>();
+        states.addAll(likelihoodMapping.keySet());
+        if (!includeNull) {
+            states.remove(null);
+        }
+        return states;
+    }
+
+    public void unsupervisedAdd(Word currWord, String possibleState) {
+        add(possibleState, currWord.getValue());
+    }
+
+    public boolean hasState(String value) {
+        return seenWords.contains(value);
+    }
+
+    public String getState(String value) {
+        for (Entry<String, HashMap<String, Integer>> entry :
+                likelihoodMapping.entrySet()) {
+            for (String entryValue : entry.getValue().keySet()) {
+                if (entryValue.equals(value)) return entry.getKey();
+            }
+        }
+        return null;
     }
 }
